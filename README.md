@@ -215,7 +215,8 @@ breaking change requests a major release. Release Please opens or updates a
 Release PR; merging that PR creates the GitHub Release and publishes:
 
 - GHCR tags `X.Y.Z`, `X.Y`, and `latest` for amd64 and arm64
-- static musl CLI and server archives for x86_64 and aarch64
+- static musl CLI and server archives for Linux x86_64 and aarch64
+- CLI and server archives for macOS 11+ x86_64 and aarch64
 - `SHA256SUMS`, an image SBOM, and build provenance attestations
 
 Downloaded binaries still require FFmpeg with `libopus` installed on the host.

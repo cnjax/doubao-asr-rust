@@ -206,7 +206,8 @@ Authorization: Bearer <key>
 Release PR；合并该 PR 后创建 GitHub Release 并发布：
 
 - `amd64` 与 `arm64` 的 GHCR 镜像标签 `X.Y.Z`、`X.Y`、`latest`
-- `x86_64` 与 `aarch64` 的静态 musl CLI/Server 压缩包
+- Linux `x86_64` 与 `aarch64` 的静态 musl CLI/Server 压缩包
+- macOS 11+ `x86_64` 与 `aarch64` 的 CLI/Server 压缩包
 - `SHA256SUMS` 校验文件、镜像 SBOM 与构建来源证明
 
 下载的二进制仍要求宿主机安装带 `libopus` 的 FFmpeg。发布工作流也提供手动
