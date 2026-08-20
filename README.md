@@ -220,8 +220,11 @@ Release PR; merging that PR creates the GitHub Release and publishes:
 - `SHA256SUMS`, an image SBOM, and build provenance attestations
 
 Downloaded binaries still require FFmpeg with `libopus` installed on the host.
-The release workflow also has a manual recovery input for rebuilding an
-existing `vX.Y.Z` release if artifact publication is interrupted.
+The release workflow can also be run manually. Supply an existing `vX.Y.Z` tag
+in `release_tag` to rebuild and re-upload that release's assets if publication
+was interrupted, or leave `release_tag` empty to build the four platform
+archives from the current branch and download them from the run's artifacts
+without creating or modifying a release.
 
 ## Rust SDK
 

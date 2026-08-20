@@ -7,8 +7,12 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: Existing release tag to rebuild, for example v0.2.0
-        required: true
+        description: >-
+          Existing release tag to rebuild, for example v0.2.0. Leave empty to
+          build the four platform archives from the current branch and attach
+          them to the run as artifacts without touching any release.
+        required: false
+        default: ""
         type: string
 
 concurrency:
@@ -98,9 +102,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.release.outputs.tag_name }}
           VERSION: ${{ steps.release.outputs.version }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
         shell: bash
         run: |
           set -euo pipefail
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
           english=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body)
           cat > notes-body.txt <<'NOTES'
           ## doubao-asr-rust v__VERSION__ — 发布说明
@@ -114,7 +120,7 @@ jobs:
           Docker（amd64 / arm64 多架构镜像）：
 
           ```bash
-          docker pull ghcr.io/6kmfi6hp/doubao-asr-rust:__VERSION__
+          docker pull __IMAGE__:__VERSION__
           ```
 
           预编译二进制（宿主机需自行安装带 `libopus` 的 FFmpeg）：
@@ -124,9 +130,11 @@ jobs:
           - `doubao-asr-v__VERSION__-macos-x86_64.tar.gz`（Intel macOS 11+）
           - `doubao-asr-v__VERSION__-macos-aarch64.tar.gz`（Apple Silicon macOS 11+）
 
-          完整中文文档见仓库 [README.zh-CN.md](https://github.com/6Kmfi6HP/doubao-asr-rust/blob/main/README.zh-CN.md)。
+          完整中文文档见仓库 [README.zh-CN.md](__REPO_URL__/blob/main/README.zh-CN.md)。
           NOTES
           sed -i "s/__VERSION__/${VERSION}/g" notes-body.txt
+          sed -i "s#__IMAGE__#${image}#g" notes-body.txt
+          sed -i "s#__REPO_URL__#${REPO_URL}#g" notes-body.txt
           {
             cat notes-body.txt
             printf '\n---\n\n'
@@ -146,7 +154,9 @@ jobs:
     permissions:
       contents: read
     outputs:
+      build: ${{ steps.info.outputs.build }}
       publish: ${{ steps.info.outputs.publish }}
+      ref: ${{ steps.info.outputs.ref }}
       tag: ${{ steps.info.outputs.tag }}
       version: ${{ steps.info.outputs.version }}
       sha: ${{ steps.info.outputs.sha }}
@@ -166,30 +176,50 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ "$EVENT_NAME" = workflow_dispatch ]; then
+          if [ "$EVENT_NAME" = workflow_dispatch ] && [ -n "$MANUAL_TAG" ]; then
             tag=$MANUAL_TAG
             if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
               echo "release_tag must match vX.Y.Z" >&2
               exit 1
             fi
-            gh release view "$tag" >/dev/null
+            if ! gh release view "$tag" >/dev/null 2>&1; then
+              echo "release $tag does not exist in $GITHUB_REPOSITORY" >&2
+              echo "leave release_tag empty to build artifacts without a release" >&2
+              exit 1
+            fi
             git fetch --force origin "refs/tags/$tag:refs/tags/$tag"
             version=${tag#v}
             sha=$(git rev-list -n 1 "$tag")
+            ref=$tag
+            build=true
             publish=true
           elif [ "$RELEASE_CREATED" = true ]; then
             tag=$RELEASE_TAG
             version=$RELEASE_VERSION
             sha=$RELEASE_SHA
+            ref=$RELEASE_TAG
+            build=true
             publish=true
+          elif [ "$EVENT_NAME" = workflow_dispatch ]; then
+            # No tag requested: build the platform archives from this ref only.
+            tag=
+            version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)-$(git rev-parse --short "$GITHUB_SHA")"
+            sha=$GITHUB_SHA
+            ref=$GITHUB_SHA
+            build=true
+            publish=false
           else
             tag=
             version=
             sha=
+            ref=
+            build=false
             publish=false
           fi
           {
+            echo "build=$build"
             echo "publish=$publish"
+            echo "ref=$ref"
             echo "tag=$tag"
             echo "version=$version"
             echo "sha=$sha"
@@ -197,7 +227,7 @@ jobs:
 
   binaries:
     name: Binary (linux ${{ matrix.asset_arch }})
-    if: always() && needs.release-info.result == 'success' && (github.event_name == 'workflow_dispatch' || needs.release-info.outputs.publish == 'true')
+    if: always() && needs.release-info.result == 'success' && needs.release-info.outputs.build == 'true'
     needs: release-info
     runs-on: ubuntu-latest
     permissions:
@@ -213,7 +243,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
-          ref: ${{ needs.release-info.outputs.tag }}
+          ref: ${{ needs.release-info.outputs.ref }}
       - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
       - name: Export static binaries
@@ -242,7 +272,7 @@ jobs:
 
   macos-binaries:
     name: Binary (macos ${{ matrix.asset_arch }})
-    if: always() && needs.release-info.result == 'success' && (github.event_name == 'workflow_dispatch' || needs.release-info.outputs.publish == 'true')
+    if: always() && needs.release-info.result == 'success' && needs.release-info.outputs.build == 'true'
     needs: release-info
     runs-on: macos-latest
     permissions:
@@ -262,7 +292,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
-          ref: ${{ needs.release-info.outputs.tag }}
+          ref: ${{ needs.release-info.outputs.ref }}
       - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
         with:
           targets: ${{ matrix.target }}
@@ -300,7 +330,7 @@ jobs:
 
   image:
     name: Container image
-    if: always() && needs.release-info.result == 'success' && (github.event_name == 'workflow_dispatch' || needs.release-info.outputs.publish == 'true')
+    if: always() && needs.release-info.result == 'success' && needs.release-info.outputs.publish == 'true'
     needs: release-info
     runs-on: ubuntu-latest
     permissions:
@@ -319,10 +349,15 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - id: image-name
+        env:
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: echo "value=ghcr.io/${REPOSITORY,,}" >> "$GITHUB_OUTPUT"
       - id: metadata
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
         with:
-          images: ghcr.io/6kmfi6hp/doubao-asr-rust
+          images: ${{ steps.image-name.outputs.value }}
           tags: |
             type=semver,pattern={{version}},value=${{ needs.release-info.outputs.tag }}
             type=semver,pattern={{major}}.{{minor}},value=${{ needs.release-info.outputs.tag }}
@@ -346,13 +381,13 @@ jobs:
           sbom: true
       - uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
         with:
-          subject-name: ghcr.io/6kmfi6hp/doubao-asr-rust
+          subject-name: ${{ steps.image-name.outputs.value }}
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
 
   release-assets:
     name: Release assets
-    if: always() && needs.release-info.result == 'success' && needs.binaries.result == 'success' && needs.macos-binaries.result == 'success' && (github.event_name == 'workflow_dispatch' || needs.release-info.outputs.publish == 'true')
+    if: always() && needs.release-info.result == 'success' && needs.binaries.result == 'success' && needs.macos-binaries.result == 'success' && needs.release-info.outputs.publish == 'true'
     needs:
       - release-info
       - binaries

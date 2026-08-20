@@ -210,8 +210,10 @@ Release PR；合并该 PR 后创建 GitHub Release 并发布：
 - macOS 11+ `x86_64` 与 `aarch64` 的 CLI/Server 压缩包
 - `SHA256SUMS` 校验文件、镜像 SBOM 与构建来源证明
 
-下载的二进制仍要求宿主机安装带 `libopus` 的 FFmpeg。发布工作流也提供手动
-恢复入口，可在附件发布中断时重建某个已存在的 `vX.Y.Z` 版本。
+下载的二进制仍要求宿主机安装带 `libopus` 的 FFmpeg。发布工作流也支持手动触发：
+在 `release_tag` 填入已存在的 `vX.Y.Z` 标签，可在附件发布中断时重建并重新上传该
+版本的附件；留空则只用当前分支构建四个平台压缩包，并作为运行产物（artifacts）
+提供下载，不会创建或改动任何 Release。
 
 每个 Release 页面都会附带中文版本说明；详细变更记录见英文
 [CHANGELOG.md](CHANGELOG.md)。
