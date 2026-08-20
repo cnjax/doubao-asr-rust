@@ -229,7 +229,9 @@ jobs:
     name: Binary (linux ${{ matrix.asset_arch }})
     if: always() && needs.release-info.result == 'success' && needs.release-info.outputs.build == 'true'
     needs: release-info
-    runs-on: ubuntu-latest
+    # Each architecture builds on a native runner; emulating arm64 through QEMU
+    # pushed this job past 35 minutes.
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
     strategy:
@@ -238,13 +240,14 @@ jobs:
         include:
           - platform: linux/amd64
             asset_arch: x86_64
+            runner: ubuntu-latest
           - platform: linux/arm64
             asset_arch: aarch64
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           ref: ${{ needs.release-info.outputs.ref }}
-      - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
       - name: Export static binaries
         env:
